@@ -181,6 +181,7 @@ Future<void> main() async {
         || !podfileLockOutput.contains(':path: ".symlinks/plugins/device_info/ios"')
         || !podfileLockOutput.contains(':path: ".symlinks/plugins/google_sign_in/ios"')
         || podfileLockOutput.contains('android_alarm_manager')) {
+        print(podfileLockOutput);
         return TaskResult.failure('Building ephemeral host app Podfile.lock does not contain expected pods');
       }
 
@@ -229,6 +230,7 @@ Future<void> main() async {
             || !hostPodfileLockOutput.contains(':path: "../hello/.ios/.symlinks/plugins/device_info/ios"')
             || !hostPodfileLockOutput.contains(':path: "../hello/.ios/.symlinks/plugins/google_sign_in/ios"')
             || hostPodfileLockOutput.contains('android_alarm_manager')) {
+          print(hostPodfileLockOutput);
           throw TaskResult.failure('Building host app Podfile.lock does not contain expected pods');
         }
 
@@ -291,10 +293,12 @@ Future<void> main() async {
       }
 
       section('Run platform unit tests');
+
+      final String resultBundleTemp = Directory.systemTemp.createTempSync('module_test_ios_xcresult.').path;
       await testWithNewIOSSimulator('TestAdd2AppSim', (String deviceId) {
         simulatorDeviceId = deviceId;
+        final String resultBundlePath = path.join(resultBundleTemp, 'result');
 
-        final String resultBundlePath = path.join(hostAgent.dumpDirectory.path, 'module_test_ios-objc-${DateTime.now().toLocal().toIso8601String()}');
         return inDirectory(objectiveCHostApp, () =>
           exec(
             'xcodebuild',
@@ -319,6 +323,22 @@ Future<void> main() async {
           ));
         }
       );
+
+      // Zip the test results to the artifacts directory for upload.
+      await inDirectory(resultBundleTemp, () {
+        final String zipPath = path.join(hostAgent.dumpDirectory.path,
+            'module_test_ios-objc-${DateTime.now().toLocal().toIso8601String()}.zip');
+        return exec(
+          'zip',
+          <String>[
+            '-r',
+            '-9',
+            zipPath,
+            'result.xcresult',
+          ],
+          canFail: true, // Best effort to get the logs.
+        );
+      });
 
       section('Fail building existing Objective-C iOS app if flutter script fails');
       final String xcodebuildOutput = await inDirectory<String>(objectiveCHostApp, () =>
